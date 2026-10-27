@@ -22,6 +22,19 @@ extension Todo {
     }
 }
 
+/// Anything with a checkbox, so todos and subtasks can share sorting.
+protocol Checkable {
+    var done: Bool { get }
+}
+
+extension Todo: Checkable {}
+extension Subtask: Checkable {}
+
+extension Array where Element: Checkable {
+    /// Moves done items to the end, keeping everything else in its original order.
+    var doneLast: [Element] { filter { !$0.done } + filter { $0.done } }
+}
+
 /// Keeps todos in memory and mirrors them to
 /// ~/Library/Application Support/FloatingTodo/todos.json
 final class TodoStore: ObservableObject {
@@ -45,10 +58,20 @@ final class TodoStore: ObservableObject {
 
     var remaining: Int { todos.filter { !$0.done }.count }
 
-    func add(_ title: String) {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        todos.append(Todo(title: trimmed))
+    /// Unchecked todos first, checked ones at the bottom.
+    var orderedTodos: [Todo] { todos.doneLast }
+
+    /// Commas are a shortcut for subtasks:
+    /// "Project 1, write analysis, finalize" → "Project 1" with two subtasks.
+    func add(_ text: String) {
+        let parts = text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let title = parts.first else { return }
+
+        var todo = Todo(title: title)
+        todo.subtasks = parts.dropFirst().map { Subtask(title: $0) }
+        todos.append(todo)
     }
 
     func toggle(_ todo: Todo) {

@@ -36,7 +36,7 @@ struct BubbleView: View {
         ZStack(alignment: .topTrailing) {
             Circle()
                 .fill(LinearGradient(
-                    colors: [Color(red: 0.47, green: 0.42, blue: 1.0), Color(red: 0.30, green: 0.24, blue: 0.88)],
+                    colors: [.themeLight, .themeDark],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ))
@@ -95,9 +95,15 @@ struct CardView: View {
     private var header: some View {
         HStack {
             Image(systemName: "checklist")
-                .foregroundStyle(Color(red: 0.40, green: 0.34, blue: 0.96))
+                .foregroundStyle(Color.theme)
             Text("To-do")
                 .font(.system(size: 14, weight: .semibold))
+            // Re-checks every minute so the date rolls over at midnight.
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(context.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             Button(action: collapse) {
                 Image(systemName: "minus")
@@ -121,6 +127,7 @@ struct CardView: View {
                 .foregroundStyle(.secondary)
             TextField("Add a task…", text: $draft)
                 .textFieldStyle(.plain)
+                .help("Tip: use commas for subtasks — \"Project 1, write analysis, finalize\"")
                 .font(.system(size: 13))
                 .focused($inputFocused)
                 .onSubmit {
@@ -145,13 +152,15 @@ struct CardView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.todos) { todo in
+                    VStack(spacing: 0) {
+                        ForEach(store.orderedTodos) { todo in
                             TodoRow(
                                 todo: todo,
-                                toggle: { store.toggle(todo) },
+                                toggle: { withAnimation(.reorder) { store.toggle(todo) } },
                                 delete: { store.delete(todo) },
-                                toggleSubtask: { subtask in store.toggleSubtask(subtask, in: todo) },
+                                toggleSubtask: { subtask in
+                                    withAnimation(.reorder) { store.toggleSubtask(subtask, in: todo) }
+                                },
                                 deleteSubtask: { subtask in store.deleteSubtask(subtask, in: todo) },
                                 addSubtask: { title in store.addSubtask(to: todo, title: title) }
                             )
@@ -206,16 +215,11 @@ struct TodoRow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button(action: toggle) {
-                    Image(systemName: todo.done ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16))
-                        .foregroundStyle(todo.done ? Color(red: 0.40, green: 0.34, blue: 0.96) : .secondary)
-                }
-                .buttonStyle(.plain)
+                CheckCircle(done: todo.done, size: 16, action: toggle)
 
                 Text(todo.title)
                     .font(.system(size: 13))
-                    .strikethrough(todo.done)
+                    .scribbledOut(todo.done)
                     .foregroundStyle(todo.done ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -248,9 +252,8 @@ struct TodoRow: View {
             .background(hovering ? Color.primary.opacity(0.06) : .clear)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .onTapGesture(count: 1, perform: toggle)
 
-            ForEach(todo.subtasks) { subtask in
+            ForEach(todo.subtasks.doneLast) { subtask in
                 SubtaskRow(
                     subtask: subtask,
                     toggle: { toggleSubtask(subtask) },
@@ -298,16 +301,11 @@ struct SubtaskRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: toggle) {
-                Image(systemName: subtask.done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(subtask.done ? Color(red: 0.40, green: 0.34, blue: 0.96) : .secondary)
-            }
-            .buttonStyle(.plain)
+            CheckCircle(done: subtask.done, size: 13, action: toggle)
 
             Text(subtask.title)
                 .font(.system(size: 12))
-                .strikethrough(subtask.done)
+                .scribbledOut(subtask.done)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -326,12 +324,102 @@ struct SubtaskRow: View {
         .background(hovering ? Color.primary.opacity(0.06) : .clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture(count: 1, perform: toggle)
     }
 }
 
 
+/// The round checkbox. On hover it grows a little and previews the checkmark.
+struct CheckCircle: View {
+    let done: Bool
+    let size: CGFloat
+    let action: () -> Void
+
+    @State private var hovering = false
+    // A local copy of `done`, animated on its own so the fill pops right away
+    // while the row's slide (and its delay) moves the circle with the text.
+    @State private var shownDone: Bool
+
+    init(done: Bool, size: CGFloat, action: @escaping () -> Void) {
+        self.done = done
+        self.size = size
+        self.action = action
+        _shownDone = State(initialValue: done)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: shownDone ? "checkmark.circle.fill" : (hovering ? "checkmark.circle" : "circle"))
+                .font(.system(size: size))
+                .foregroundStyle(shownDone || hovering ? Color.theme : .secondary)
+                .scaleEffect(hovering ? 1.18 : 1)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering in
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) { hovering = isHovering }
+        }
+        .onChange(of: done) { newValue in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { shownDone = newValue }
+        }
+        .help(done ? "Mark as not done" : "Mark as done")
+    }
+}
+
 // MARK: - Helpers
+
+extension Color {
+    /// The app's main color. Change these three to re-theme everything.
+    static let theme = Color(red: 91 / 255, green: 141 / 255, blue: 239 / 255)        // #5B8DEF
+    static let themeLight = Color(red: 127 / 255, green: 166 / 255, blue: 243 / 255)  // #7FA6F3
+    static let themeDark = Color(red: 62 / 255, green: 111 / 255, blue: 216 / 255)    // #3E6FD8
+}
+
+extension Animation {
+    /// Used when checking items off, so they glide to their new spot.
+    /// The short delay lets the scribble finish drawing before the row slides away.
+    static let reorder = Animation.spring(response: 0.5, dampingFraction: 0.95).delay(0.3)
+}
+
+/// A straight line across the middle of whatever it's drawn over.
+struct StrikeLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let midY = rect.midY + 0.5
+        path.move(to: CGPoint(x: rect.minX - 1, y: midY))
+        path.addLine(to: CGPoint(x: rect.maxX + 1, y: midY))
+        return path
+    }
+}
+
+/// Crosses a view out with a gray line that draws itself left to right.
+struct ScribbledOut: ViewModifier {
+    let done: Bool
+    // How much of the line is drawn (0 to 1). Animated on its own, separate from
+    // the row sliding, so the line stays glued to the text while it moves.
+    @State private var progress: CGFloat
+
+    init(done: Bool) {
+        self.done = done
+        _progress = State(initialValue: done ? 1 : 0)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                StrikeLine()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.secondary, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+            )
+            .onChange(of: done) { newValue in
+                withAnimation(.easeInOut(duration: 0.3)) { progress = newValue ? 1 : 0 }
+            }
+    }
+}
+
+extension View {
+    func scribbledOut(_ done: Bool) -> some View {
+        modifier(ScribbledOut(done: done))
+    }
+}
 
 /// Lets a view drag the floating window around. If the mouse barely moved,
 /// it counts as a click instead.
