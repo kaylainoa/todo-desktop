@@ -368,9 +368,9 @@ struct CheckCircle: View {
 
 extension Color {
     /// The app's main color. Change these three to re-theme everything.
-    static let theme = Color(red: 91 / 255, green: 141 / 255, blue: 239 / 255)        // #5B8DEF
-    static let themeLight = Color(red: 127 / 255, green: 166 / 255, blue: 243 / 255)  // #7FA6F3
-    static let themeDark = Color(red: 62 / 255, green: 111 / 255, blue: 216 / 255)    // #3E6FD8
+    static let theme = Color(red: 102 / 255, green: 87 / 255, blue: 245 / 255)        // #6657F5
+    static let themeLight = Color(red: 120 / 255, green: 107 / 255, blue: 255 / 255)  // #786BFF
+    static let themeDark = Color(red: 77 / 255, green: 61 / 255, blue: 224 / 255)     // #4D3DE0
 }
 
 extension Animation {
